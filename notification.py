@@ -1,150 +1,125 @@
-# notification.py
 import requests
 import re
 
 class Notification:
     def send_lotto_buying_message(self, body: dict, webhook_url: str) -> None:
-        """
-        로또 구매 후 Discord/Webhook 알림
-        """
-        assert isinstance(webhook_url, str)
+        assert type(webhook_url) == str
 
         result = body.get("result", {})
-        return_msg = result.get("resultMsg", "")
-        # 실패 시 에러 메시지 전송
-        if return_msg.upper() != "SUCCESS":
-            error_code = result.get("resultCode", "UNKNOWN")
+        # ── 원본: 실패 시 return만 하던 곳을 수정 ──
+        if result.get("resultMsg", "FAILURE").upper() != "SUCCESS":
+            code = result.get("resultCode", "")
+            msg_text = result.get("resultMsg", "")
             message = (
-                f"🚨 로또 구매 오류 발생\n"
-                f"코드: {error_code}\n"
-                f"메시지: {return_msg}"
+                f"💥 로또 구매 실패\n"
+                f"코드: {code}\n"
+                f"메시지: {msg_text}"
             )
             self._send_discord_webhook(webhook_url, message)
             return
 
-        # 성공 시 번호 전송
         lotto_number_str = self.make_lotto_number_message(result["arrGameChoiceNum"])
-        buy_round = result.get("buyRound", "")
-        balance = body.get("balance", "")
-        message = (
-            f"✅ {buy_round}회차 로또 구매 완료 :moneybag:\n"
-            f"남은 잔액: {balance}원\n"
-            f"```{lotto_number_str}```"
-        )
+        message = f"{result['buyRound']}회 로또 구매 완료 :moneybag: 남은잔액 : {body['balance']}\n```{lotto_number_str}```"
         self._send_discord_webhook(webhook_url, message)
 
     def make_lotto_number_message(self, lotto_number: list) -> str:
-        """
-        로또 번호 리스트를 메시지 문자열로 변환
-        """
-        assert isinstance(lotto_number, list)
+        assert type(lotto_number) == list
 
         # parse list without last number 3
         lotto_number = [x[:-1] for x in lotto_number]
-        # remove '|' and convert to spaced string
+        
+        # remove alphabet and | replace white space  from lotto_number
         lotto_number = [x.replace("|", " ") for x in lotto_number]
-        return "\n".join(lotto_number)
+        
+        # lotto_number to string 
+        lotto_number = '\n'.join(x for x in lotto_number)
+        
+        return lotto_number
 
     def send_win720_buying_message(self, body: dict, webhook_url: str) -> None:
-        """
-        연금복권 구매 후 Discord/Webhook 알림
-        """
-        assert isinstance(webhook_url, str)
+        assert type(webhook_url) == str
 
-        result_code = body.get("resultCode", "")
-        result_msg  = body.get("resultMsg", "")
-        # 실패 시 에러 메시지 전송
-        if result_code != "100":
+        # ── 원본: 실패 시 return만 하던 곳을 수정 ──
+        if body.get("resultCode") != '100':
+            code = body.get("resultCode", "")
+            msg_text = body.get("resultMsg", "")
             message = (
-                f"🚨 연금복권 구매 오류 발생\n"
-                f"코드: {result_code}\n"
-                f"메시지: {result_msg}"
+                f"💥 연금복권 구매 실패\n"
+                f"코드: {code}\n"
+                f"메시지: {msg_text}"
             )
+            self._send_discord_webhook(webhook_url, message)
+            return       
+
+        win720_round = body.get("resultMsg").split("|")[3]
+        win720_number_str = self.make_win720_number_message(body.get("saleTicket"))
+        message = f"{win720_round}회 연금복권 구매 완료 :moneybag: 남은잔액 : {body['balance']}\n```\n{win720_number_str}```"
+        self._send_discord_webhook(webhook_url, message)
+
+    def make_win720_number_message(self, win720_number: str) -> str:
+        formatted_numbers = []
+        for number in win720_number.split(","):
+            formatted_number = f"{number[0]}조 " + " ".join(number[1:])
+            formatted_numbers.append(formatted_number)
+        return "\n".join(formatted_numbers)
+
+    def send_lotto_winning_message(self, winning: dict, webhook_url: str) -> None: 
+        assert type(winning) == dict
+        assert type(webhook_url) == str
+
+        try: 
+            round = winning["round"]
+            money = winning["money"]
+
+            max_label_status_length = max(len(f"{line['label']} {line['status']}") for line in winning["lotto_details"])
+
+            formatted_lines = []
+            for line in winning["lotto_details"]:
+                line_label_status = f"{line['label']} {line['status']}".ljust(max_label_status_length)
+                line_result = line["result"]
+
+                formatted_nums = []
+                for num in line_result:
+                    raw_num = re.search(r'\d+', num).group()
+                    formatted_num = f"{int(raw_num):02d}"
+                    if '✨' in num:
+                        formatted_nums.append(f"[{formatted_num}]")
+                    else:
+                        formatted_nums.append(f" {formatted_num} ")
+
+                formatted_nums = [f"{num:>6}" for num in formatted_nums]
+
+                formatted_line = f"{line_label_status} " + " ".join(formatted_nums)
+                formatted_lines.append(formatted_line)
+
+            formatted_results = "\n".join(formatted_lines)
+
+            if winning['money'] != "-":
+                winning_message = f"로또 *{winning['round']}회* - *{winning['money']}* 당첨 되었습니다 🎉"
+            else:
+                winning_message = f"로또 *{winning['round']}회* - 다음 기회에... 🫠"
+
+            self._send_discord_webhook(webhook_url, f"```ini\n{formatted_results}```\n{winning_message}")
+        except KeyError:
+            return
+
+    def send_win720_winning_message(self, winning: dict, webhook_url: str) -> None: 
+        assert type(winning) == dict
+        assert type(webhook_url) == str
+
+        try: 
+            round = winning["round"]
+            money = winning["money"]
+
+            if winning['money'] != "-":
+                message = f"연금복권 *{winning['round']}회* - *{winning['money']}* 당첨 되었습니다 🎉"
+
+            self._send_discord_webhook(webhook_url, message)
+        except KeyError:
+            message = f"연금복권 - 다음 기회에... 🫠"
             self._send_discord_webhook(webhook_url, message)
             return
 
-        # 성공 시 번호 전송
-        # saleTicket 포맷: "<...>|<...>|<...>|회차|번호,번호,..."
-        sale_ticket = body.get("saleTicket", "")
-        parts = sale_ticket.split("|")
-        win720_round = parts[3] if len(parts) > 3 else ""
-        tickets = parts[4].split(",") if len(parts) > 4 else []
-        win720_number_str = self.make_win720_number_message(tickets)
-        balance = body.get("balance", "")
-        message = (
-            f"✅ {win720_round}회차 연금복권 구매 완료 :moneybag:\n"
-            f"남은 잔액: {balance}원\n"
-            f"```{win720_number_str}```"
-        )
-        self._send_discord_webhook(webhook_url, message)
-
-    def make_win720_number_message(self, win720_numbers: list) -> str:
-        """
-        연금복권 티켓 정보를 메시지 문자열로 변환
-        """
-        lines = []
-        for idx, ticket in enumerate(win720_numbers, start=1):
-            # ticket 예: "1조1234"
-            formatted = f"[{idx}] {ticket[0]}조 {' '.join(ticket[1:])}"
-            lines.append(formatted)
-        return "\n".join(lines)
-
-    def send_lotto_winning_message(self, winning: dict, webhook_url: str) -> None:
-        """
-        로또 당첨 내역을 Discord/Webhook 알림
-        """
-        assert isinstance(winning, dict)
-        assert isinstance(webhook_url, str)
-
-        try:
-            # 상세 결과 포맷
-            max_len = max(len(f"{ln['label']} {ln['status']}") for ln in winning["lotto_details"])
-            formatted_lines = []
-            for ln in winning["lotto_details"]:
-                label_status = f"{ln['label']} {ln['status']}".ljust(max_len)
-                nums = []
-                for num in ln["result"]:
-                    raw = re.search(r'\d+', num).group()
-                    fmt = f"{int(raw):02d}"
-                    nums.append(f"[{fmt}]" if '✨' in num else f" {fmt} ")
-                nums = [f"{n:>6}" for n in nums]
-                formatted_lines.append(f"{label_status} " + " ".join(nums))
-
-            results_block = "\n".join(formatted_lines)
-            money = winning.get("money", "-")
-            if money != "-":
-                win_msg = f"로또 *{winning['round']}회* - *{money}* 당첨 되었습니다 🎉"
-            else:
-                win_msg = f"로또 *{winning['round']}회* - 다음 기회에... 🫠"
-
-            self._send_discord_webhook(
-                webhook_url,
-                f"```ini\n{results_block}```\n{win_msg}"
-            )
-        except KeyError:
-            # 데이터 없으면 무시
-            return
-
-    def send_win720_winning_message(self, winning: dict, webhook_url: str) -> None:
-        """
-        연금복권 당첨 내역을 Discord/Webhook 알림
-        """
-        assert isinstance(winning, dict)
-        assert isinstance(webhook_url, str)
-
-        try:
-            money = winning.get("money", "-")
-            if money != "-":
-                msg = f"연금복권 *{winning['round']}회* - *{money}* 당첨 되었습니다 🎉"
-            else:
-                msg = f"연금복권 *{winning['round']}회* - 다음 기회에... 🫠"
-            self._send_discord_webhook(webhook_url, msg)
-        except KeyError:
-            self._send_discord_webhook(webhook_url, "연금복권 당첨 정보 조회 실패")
-
-    def _send_discord_webhook(self, webhook_url: str, message: str) -> None:
-        """
-        Discord Webhook으로 메시지 전송
-        """
-        payload = {"content": message}
+    def _send_discord_webhook(self, webhook_url: str, message: str) -> None:        
+        payload = { "content": message }
         requests.post(webhook_url, json=payload)
