@@ -1,0 +1,28 @@
+name: Keep Repo Active
+
+on:
+  # ⚠️ GitHub Actions 크론은 UTC 기준이에요.
+  # 매달 1일과 15일 00:10 UTC에 실행 (한국시간 +9h → 오전 9:10)
+  schedule:
+    - cron: "10 0 1,15 * *"
+  # 필요할 때 수동 실행도 가능
+  workflow_dispatch:
+
+permissions:
+  contents: write  # push 위해 필요
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true  # GITHUB_TOKEN으로 push
+
+      - name: Make an empty keep-alive commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit --allow-empty -m "chore: keep-alive $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          git push
