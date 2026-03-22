@@ -1,0 +1,25 @@
+name: Keepalive Workflow
+
+on:
+  schedule:
+    # 50일마다 한 번씩 실행 (60일 되기 전에 갱신)
+    - cron: '0 0 */50 * *'
+  workflow_dispatch: # 수동으로도 실행 가능하게 설정
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Automated Commit
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          date > keepalive.txt
+          git add keepalive.txt
+          git commit -m "chore: keepalive commit [skip ci]" || echo "No changes to commit"
+          git push
